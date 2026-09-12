@@ -1,8 +1,8 @@
 {
   "name": "PIDReg",
-  "version": "1.0.0",
-  "description": "PID regulator with interface and anti-windup for Arduino / PlatformIO",
-  "keywords": "pid, control, regulator, feedback, esp32, arduino",
+  "version": "1.2.0",
+  "description": "PID regulator with relay autotune, SOLID interfaces and anti-windup for Arduino / PlatformIO",
+  "keywords": "pid, control, regulator, feedback, autotune, esp32, arduino",
   "authors": [
     {
       "name": "Savelii Yam",
@@ -17,12 +17,26 @@
   "license": "MIT",
   "frameworks": "*",
   "platforms": "*",
-  "headers": ["PidController.h", "IPidController.h"],
-  "examples": [
+  "headers": [
+    "PidController.h",
+    "IPidController.h",
+    "PidAutotuner.h",
+    "IPidAutotuner.h",
+    "IPidTuningRule.h",
+    "PidTunings.h",
+    "PidAutotuneTypes.h",
+    "OutputClamp.h",
+    "ZieglerNicholsRule.h"
+  ],  "examples": [
     {
       "name": "Basic",
       "base": "examples/Basic",
       "files": ["Basic.ino"]
+    },
+    {
+      "name": "Autotune",
+      "base": "examples/Autotune",
+      "files": ["Autotune.ino"]
     }
   ],
   "export": {

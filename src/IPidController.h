@@ -1,5 +1,7 @@
 #pragma once
 
+#include "PidTunings.h"
+
 /**
  * Интерфейс ПИД-регулятора.
  * Позволяет подменять реализации в проектах без изменения вызывающего кода.
@@ -18,11 +20,13 @@ public:
   virtual float compute(float setpoint, float measurement, float dt) = 0;
 
   virtual void setTunings(float kp, float ki, float kd) = 0;
+  virtual void setTunings(const PidTunings& tunings) = 0;
   virtual void setOutputLimits(float min, float max) = 0;
 
   /** Сброс интегральной и дифференциальной составляющих */
   virtual void reset() = 0;
 
+  virtual PidTunings getTunings() const = 0;
   virtual float getKp() const = 0;
   virtual float getKi() const = 0;
   virtual float getKd() const = 0;

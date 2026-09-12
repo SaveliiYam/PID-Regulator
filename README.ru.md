@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Лёгкая библиотека **ПИД-регулятора** для Arduino и PlatformIO.  
-Есть абстрактный интерфейс (`IPidController`) и готовая реализация (`PidController`) с ограничением выхода и anti-windup по интегральной составляющей.
+Есть абстрактный интерфейс (`IPidController`), реализация (`PidController`) с anti-windup и **автотюнинг** (`IPidAutotuner` / `PidAutotuner`), который записывает найденные коэффициенты в регулятор.
 
 [English version](README.md)
 
@@ -14,6 +14,7 @@
 - Классический ПИД: \(u = K_p e + K_i \int e\,dt + K_d \frac{de}{dt}\)
 - Настраиваемые пределы выхода
 - Anti-windup интегратора (ограничение I-составляющей границами выхода)
+- Автотюн методом реле (Åström–Hägglund) и правила Ziegler–Nichols
 - Работа через интерфейс — удобно подменять реализацию и писать тесты
 - Ядро алгоритма не зависит от Arduino (`dt` передаётся явно)
 - Подходит для любой платформы PlatformIO / Arduino (`architectures=*`)
@@ -53,6 +54,8 @@ lib_deps =
 ```cpp
 #include <PidController.h>
 #include <IPidController.h>
+#include <PidAutotuner.h>
+#include <IPidAutotuner.h>
 ```
 
 ### Arduino IDE
@@ -61,7 +64,7 @@ lib_deps =
 2. В Arduino IDE: **Скетч → Подключить библиотеку → Добавить .ZIP-библиотеку…** и выберите ZIP  
    *(либо скопируйте папку в `Documents/Arduino/libraries/PIDReg`)*.
 3. При необходимости перезапустите IDE.
-4. Пример: **Файл → Примеры → PIDReg → Basic**.
+4. Пример: **Файл → Примеры → PIDReg → Basic** или **Autotune**.
 
 ---
 
@@ -106,6 +109,67 @@ float output = regulator.compute(setpoint, measurement, dt);
 
 ---
 
+## Автотюнинг
+
+`PidAutotuner` подаёт на объект релейное воздействие (±`outputStep` вокруг рабочей точки), измеряет амплитуду \(A\) и период \(P_u\) колебаний, считает:
+
+\[
+K_u = \frac{4d}{\pi A}
+\]
+
+и по выбранному правилу (классический Ziegler–Nichols, Pessen, с/без перерегулирования, только PI) получает `Kp/Ki/Kd`. После успеха вызовите `applyTunings()`, чтобы записать коэффициенты в привязанный `IPidController`.
+
+```cpp
+#include <IPidAutotuner.h>
+#include <PidAutotuner.h>
+#include <PidController.h>
+
+PidController pid;
+PidAutotuner tuner(pid);
+IPidAutotuner& autotune = tuner;
+
+void setup() {
+  pid.setOutputLimits(0, 255);
+  autotune.setTarget(100.0f);
+  autotune.setOutputStep(40.0f);
+  autotune.setNoiseBand(1.0f);
+  autotune.setControlRule(IPidAutotuner::Rule::ClassicPid);
+  autotune.setOutputLimits(0, 255);
+  autotune.start(/*measurement*/ 0.0f, /*outputCenter*/ 128.0f);
+}
+
+void loop() {
+  float dt = /* ... */;
+  float measurement = /* датчик */;
+
+  if (autotune.isRunning()) {
+    float out = autotune.update(measurement, dt);
+    // подать `out` на исполнительный орган
+    return;
+  }
+
+  if (autotune.isFinished()) {
+    autotune.applyTunings();  // в pid записаны новые Kp/Ki/Kd
+  }
+
+  float out = pid.compute(100.0f, measurement, dt);
+}
+```
+
+| Правило | Когда использовать |
+|---------|-------------------|
+| `ClassicPid` | Классический Ziegler–Nichols PID |
+| `PessenIntegral` | Более агрессивный интеграл |
+| `SomeOvershoot` | Более мягкий отклик |
+| `NoOvershoot` | Консервативно / малое перерегулирование |
+| `PiOnly` | Без D-составляющей |
+
+Полный скетч: [`examples/Autotune/Autotune.ino`](examples/Autotune/Autotune.ino).
+
+**Безопасность:** автотюн намеренно раскачивает процесс. Выбирайте безопасный `outputStep`, задайте лимиты и таймаут, запускайте только на объекте, который это выдержит.
+
+---
+
 ## Обзор API
 
 ### `IPidController` (интерфейс)
@@ -126,6 +190,21 @@ float output = regulator.compute(setpoint, measurement, dt);
 
 **Конструктор:** `PidController(float kp = 1.0f, float ki = 0.0f, float kd = 0.0f)`
 
+### `IPidAutotuner` / `PidAutotuner`
+
+`IPidAutotuner` — интерфейс; `PidAutotuner` — реализация методом реле.
+
+| Метод | Описание |
+|--------|----------|
+| `start(measurement, outputCenter)` | Старт релейного теста |
+| `update(measurement, dt)` | Шаг; возвращает выход на актуатор во время тюнинга |
+| `applyTunings()` | Записать найденные коэффициенты в привязанный ПИД |
+| `setTarget` / `setOutputStep` / `setNoiseBand` | Параметры автотюна |
+| `setControlRule(Rule)` | Набор правил Ziegler–Nichols |
+| `setTimeout(seconds)` | Прервать, если нет результата (0 = без лимита) |
+| `isRunning` / `isFinished` / `isFailed` | Состояние |
+| `getKp/Ki/Kd`, `getKu`, `getPu` | Результаты после успеха |
+
 ---
 
 ## Советы по настройке
@@ -136,6 +215,8 @@ float output = regulator.compute(setpoint, measurement, dt);
 4. Передавайте стабильный `dt` (лучше фиксированный период регулирования).
 5. Задайте `setOutputLimits` под ваш исполнительный орган (ШИМ, скважность, напряжение и т.д.).
 
+TODO: Написать авто-тюн механизм составляющих ПИД.
+
 ---
 
 ## Структура проекта
@@ -144,9 +225,11 @@ float output = regulator.compute(setpoint, measurement, dt);
 PID-Regulator/
 ├── src/
 │   ├── IPidController.h
-│   ├── PidController.h
-│   └── PidController.cpp
+│   ├── PidController.h / .cpp
+│   ├── PidAutotuner.h / .cpp
+│   └── IPidAutotuner.h
 ├── examples/Basic/
+├── examples/Autotune/
 ├── library.json
 ├── library.properties
 ├── keywords.txt

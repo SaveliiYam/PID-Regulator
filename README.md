@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Lightweight **PID controller** library for Arduino and PlatformIO.  
-Includes an abstract interface (`IPidController`) and a ready-to-use implementation (`PidController`) with output limits and integral anti-windup.
+Includes an abstract interface (`IPidController`), a ready-to-use implementation (`PidController`) with anti-windup, and **relay autotune** (`IPidAutotuner` / `PidAutotuner`) that writes gains into the controller.
 
 [Русская версия](README.ru.md)
 
@@ -14,6 +14,7 @@ Includes an abstract interface (`IPidController`) and a ready-to-use implementat
 - Classic PID: \(u = K_p e + K_i \int e\,dt + K_d \frac{de}{dt}\)
 - Configurable output limits
 - Integral anti-windup (clamps the I-term to output bounds)
+- Relay autotune (Åström–Hägglund) with Ziegler–Nichols-style rules
 - Interface-based design — easy to mock or swap implementations
 - No Arduino dependency in the core algorithm (`dt` is passed explicitly)
 - Works with any PlatformIO / Arduino platform (`architectures=*`)
@@ -53,6 +54,8 @@ Then include headers as usual:
 ```cpp
 #include <PidController.h>
 #include <IPidController.h>
+#include <PidAutotuner.h>
+#include <IPidAutotuner.h>
 ```
 
 ### Arduino IDE
@@ -61,7 +64,7 @@ Then include headers as usual:
 2. In Arduino IDE: **Sketch → Include Library → Add .ZIP Library…** and select the ZIP  
    *(or copy the folder into `Documents/Arduino/libraries/PIDReg`)*.
 3. Restart the IDE if needed.
-4. Open an example: **File → Examples → PIDReg → Basic**.
+4. Open an example: **File → Examples → PIDReg → Basic** or **Autotune**.
 
 ---
 
@@ -106,6 +109,67 @@ See also [`examples/Basic/Basic.ino`](examples/Basic/Basic.ino).
 
 ---
 
+## Autotune
+
+`PidAutotuner` drives the plant with a relay (±`outputStep` around a working point), measures the oscillation amplitude \(A\) and period \(P_u\), then computes:
+
+\[
+K_u = \frac{4d}{\pi A}
+\]
+
+and applies a selected rule (classic Ziegler–Nichols, Pessen, some/no overshoot, PI-only). When finished, call `applyTunings()` to write `Kp/Ki/Kd` into the bound `IPidController`.
+
+```cpp
+#include <IPidAutotuner.h>
+#include <PidAutotuner.h>
+#include <PidController.h>
+
+PidController pid;
+PidAutotuner tuner(pid);
+IPidAutotuner& autotune = tuner;
+
+void setup() {
+  pid.setOutputLimits(0, 255);
+  autotune.setTarget(100.0f);
+  autotune.setOutputStep(40.0f);
+  autotune.setNoiseBand(1.0f);
+  autotune.setControlRule(IPidAutotuner::Rule::ClassicPid);
+  autotune.setOutputLimits(0, 255);
+  autotune.start(/*measurement*/ 0.0f, /*outputCenter*/ 128.0f);
+}
+
+void loop() {
+  float dt = /* ... */;
+  float measurement = /* sensor */;
+
+  if (autotune.isRunning()) {
+    float out = autotune.update(measurement, dt);
+    // write `out` to the actuator
+    return;
+  }
+
+  if (autotune.isFinished()) {
+    autotune.applyTunings();  // pid now has new Kp/Ki/Kd
+  }
+
+  float out = pid.compute(100.0f, measurement, dt);
+}
+```
+
+| Rule | Use when |
+|------|----------|
+| `ClassicPid` | Default Ziegler–Nichols PID |
+| `PessenIntegral` | Faster integral action |
+| `SomeOvershoot` | Milder response |
+| `NoOvershoot` | Conservative / little overshoot |
+| `PiOnly` | No D term |
+
+Full sketch: [`examples/Autotune/Autotune.ino`](examples/Autotune/Autotune.ino).
+
+**Safety:** autotune deliberately oscillates the process. Use a safe `outputStep`, set limits/timeout, and only run on a plant that can tolerate it.
+
+---
+
 ## API overview
 
 ### `IPidController` (interface)
@@ -126,6 +190,21 @@ Extra: `getIntegral()` — current integral term.
 
 **Constructor:** `PidController(float kp = 1.0f, float ki = 0.0f, float kd = 0.0f)`
 
+### `IPidAutotuner` / `PidAutotuner`
+
+`IPidAutotuner` is the interface; `PidAutotuner` is the relay implementation.
+
+| Method | Description |
+|--------|-------------|
+| `start(measurement, outputCenter)` | Begin relay test |
+| `update(measurement, dt)` | Step; returns actuator output while tuning |
+| `applyTunings()` | Write found gains into the bound PID |
+| `setTarget` / `setOutputStep` / `setNoiseBand` | Autotune parameters |
+| `setControlRule(Rule)` | Ziegler–Nichols-style rule set |
+| `setTimeout(seconds)` | Abort if no result (0 = no limit) |
+| `isRunning` / `isFinished` / `isFailed` | State helpers |
+| `getKp/Ki/Kd`, `getKu`, `getPu` | Results after success |
+
 ---
 
 ## Tuning tips
@@ -144,9 +223,11 @@ Extra: `getIntegral()` — current integral term.
 PID-Regulator/
 ├── src/
 │   ├── IPidController.h
-│   ├── PidController.h
-│   └── PidController.cpp
+│   ├── PidController.h / .cpp
+│   ├── PidAutotuner.h / .cpp
+│   └── IPidAutotuner.h
 ├── examples/Basic/
+├── examples/Autotune/
 ├── library.json
 ├── library.properties
 ├── keywords.txt

@@ -7,6 +7,14 @@
 #######################################
 IPidController	KEYWORD1
 PidController	KEYWORD1
+IPidAutotuner	KEYWORD1
+PidAutotuner	KEYWORD1
+IPidTuningRule	KEYWORD1
+ZieglerNicholsRule	KEYWORD1
+PidTunings	KEYWORD1
+OutputClamp	KEYWORD1
+PidAutotuneState	KEYWORD1
+PidAutotuneRule	KEYWORD1
 
 #######################################
 # Methods and Functions (KEYWORD2)
@@ -21,7 +29,31 @@ getKd	KEYWORD2
 getLastOutput	KEYWORD2
 getLastError	KEYWORD2
 getIntegral	KEYWORD2
+setTarget	KEYWORD2
+setOutputStep	KEYWORD2
+setNoiseBand	KEYWORD2
+setControlRule	KEYWORD2
+setIgnoreCycles	KEYWORD2
+setSettleCycles	KEYWORD2
+setTimeout	KEYWORD2
+start	KEYWORD2
+cancel	KEYWORD2
+update	KEYWORD2
+applyTunings	KEYWORD2
+isRunning	KEYWORD2
+isFinished	KEYWORD2
+isFailed	KEYWORD2
+getKu	KEYWORD2
+getPu	KEYWORD2
+setTuningRule	KEYWORD2
+getTunings	KEYWORD2
+forRule	KEYWORD2
 
 #######################################
 # Constants (LITERAL1)
 #######################################
+ClassicPid	LITERAL1
+PessenIntegral	LITERAL1
+SomeOvershoot	LITERAL1
+NoOvershoot	LITERAL1
+PiOnly	LITERAL1
