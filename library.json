@@ -1,0 +1,46 @@
+{
+  "name": "PIDReg",
+  "version": "1.0.0",
+  "description": "PID regulator with interface and anti-windup for Arduino / PlatformIO",
+  "keywords": "pid, control, regulator, feedback, esp32, arduino",
+  "authors": [
+    {
+      "name": "Savelii Yam",
+      "url": "https://github.com/SaveliiYam"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SaveliiYam/PID-Regulator.git"
+  },
+  "homepage": "https://github.com/SaveliiYam/PID-Regulator",
+  "license": "MIT",
+  "frameworks": "*",
+  "platforms": "*",
+  "headers": ["PidController.h", "IPidController.h"],
+  "examples": [
+    {
+      "name": "Basic",
+      "base": "examples/Basic",
+      "files": ["Basic.ino"]
+    }
+  ],
+  "export": {
+    "include": [
+      "src/*",
+      "examples/*",
+      "library.json",
+      "library.properties",
+      "keywords.txt",
+      "LICENSE",
+      "README.md",
+      "README.ru.md"
+    ],
+    "exclude": [
+      ".pio",
+      ".vscode",
+      ".git",
+      "platformio.ini"
+    ]
+  }
+}
