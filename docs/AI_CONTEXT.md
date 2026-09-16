@@ -12,6 +12,7 @@ document and the code disagree.
 - Core algorithm dependency on Arduino: none
 - License: MIT
 - Purpose: PID control, relay autotuning, and replaceable tuning strategies
+- Default local verification target: ESP32 Wokwi simulation
 
 ## Architecture graph
 
@@ -185,7 +186,9 @@ Use these file groups for focused retrieval:
   `ZieglerNicholsRule.cpp`
 - Integration examples: `examples/Basic/Basic.ino`,
   `examples/Autotune/Autotune.ino`
-- Packaging: `library.json`, `library.properties`, `platformio.ini`
+- Wokwi integration: `examples/Wokwi/Wokwi.ino`, `diagram.json`,
+  `wokwi.toml`, `platformio.ini`
+- Packaging: `library.json`, `library.properties`
 - Human documentation: `README.md`, `README.ru.md`
 
 ## Change checklist for AI agents
@@ -196,5 +199,5 @@ Use these file groups for focused retrieval:
 4. Update `library.json`, `library.properties`, and `keywords.txt` when public
    symbols or versions change.
 5. Update this context map when architecture or ownership changes.
-6. Build the example with `pio run` before proposing a release.
+6. Build the Wokwi example with `pio run -e wokwi` before proposing a release.
 7. Do not commit `.pio/` or IDE-generated files.

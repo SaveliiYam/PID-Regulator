@@ -38,6 +38,11 @@
       "name": "Autotune",
       "base": "examples/Autotune",
       "files": ["Autotune.ino"]
+    },
+    {
+      "name": "Wokwi",
+      "base": "examples/Wokwi",
+      "files": ["Wokwi.ino"]
     }
   ],
   "export": {

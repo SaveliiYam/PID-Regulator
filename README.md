@@ -67,6 +67,44 @@ Then include headers as usual:
 3. Restart the IDE if needed.
 4. Open an example: **File → Examples → PIDReg → Basic** or **Autotune**.
 
+### Wokwi simulation
+
+The repository includes a complete local Wokwi scenario. It runs relay
+autotune against a simulated second-order thermal plant and then switches to
+the tuned PID controller. No external components are required.
+
+1. Install the **Wokwi Simulator** extension in VS Code/Cursor.
+2. Clone this repository and open its root folder.
+3. Build the simulation firmware:
+
+   ```bash
+   pio run -e wokwi
+   ```
+
+4. Open `diagram.json`, then run **Wokwi: Start Simulator** from the command
+   palette.
+5. Watch the serial output. It starts as CSV:
+
+   ```text
+   time,phase,setpoint,measurement,error,output,actuator,kp,ki,kd
+   ```
+
+   After several simulated cycles, `# AUTOTUNE -> PID` appears and `phase`
+   changes from `AUTOTUNE` to `PID`. The measurement should converge to the
+   setpoint (`100`). Lines starting with `#` explain relay switches, periodic
+   autotune/PID state, calculated gains, and phase transitions.
+
+Relevant files:
+
+- [`examples/Wokwi/Wokwi.ino`](examples/Wokwi/Wokwi.ino) — simulated plant and test flow
+- [`diagram.json`](diagram.json) — ESP32 circuit
+- [`wokwi.toml`](wokwi.toml) — firmware paths
+- [`platformio.ini`](platformio.ini) — `wokwi` build environment
+
+If the terminal is empty, stop the simulation, rebuild with
+`pio run -e wokwi`, and start it again from the repository root. Opening only
+`diagram.json` on wokwi.com does not upload the local PlatformIO firmware.
+
 ---
 
 ## Quick start
@@ -300,7 +338,10 @@ PID-Regulator/
 │   └── IPidAutotuner.h
 ├── examples/Basic/
 ├── examples/Autotune/
+├── examples/Wokwi/
 ├── docs/AI_CONTEXT.md
+├── diagram.json
+├── wokwi.toml
 ├── platformio.ini
 ├── library.json
 ├── library.properties

@@ -67,6 +67,44 @@ lib_deps =
 3. При необходимости перезапустите IDE.
 4. Пример: **Файл → Примеры → PIDReg → Basic** или **Autotune**.
 
+### Проверка в Wokwi
+
+В репозитории есть готовый локальный сценарий Wokwi. Он запускает relay-autotune
+на программной модели инерционного теплового объекта, а затем переключается на
+ПИД с найденными коэффициентами. Внешние компоненты не нужны.
+
+1. Установите расширение **Wokwi Simulator** в VS Code/Cursor.
+2. Клонируйте репозиторий и откройте его корневую папку.
+3. Соберите прошивку:
+
+   ```bash
+   pio run -e wokwi
+   ```
+
+4. Откройте `diagram.json`, затем выполните **Wokwi: Start Simulator** через
+   палитру команд.
+5. Следите за выводом Serial Monitor. Сначала появится CSV:
+
+   ```text
+   time,phase,setpoint,measurement,error,output,actuator,kp,ki,kd
+   ```
+
+   Через несколько моделируемых циклов появится `# AUTOTUNE -> PID`, а
+   `phase` изменится с `AUTOTUNE` на `PID`. Измерение должно сойтись к заданию
+   `100`. Строки с префиксом `#` показывают переключения реле, периодическое
+   состояние автотюна/ПИД, рассчитанные коэффициенты и смену фаз.
+
+Связанные файлы:
+
+- [`examples/Wokwi/Wokwi.ino`](examples/Wokwi/Wokwi.ino) — модель объекта и сценарий
+- [`diagram.json`](diagram.json) — схема ESP32
+- [`wokwi.toml`](wokwi.toml) — пути к прошивке
+- [`platformio.ini`](platformio.ini) — окружение сборки `wokwi`
+
+Если терминал пустой, остановите симуляцию, выполните `pio run -e wokwi` и
+запустите её снова из корня репозитория. Если открыть только `diagram.json` на
+wokwi.com, локальная прошивка PlatformIO туда не загрузится.
+
 ---
 
 ## Быстрый старт
@@ -300,7 +338,10 @@ PID-Regulator/
 │   └── IPidAutotuner.h
 ├── examples/Basic/
 ├── examples/Autotune/
+├── examples/Wokwi/
 ├── docs/AI_CONTEXT.md
+├── diagram.json
+├── wokwi.toml
 ├── platformio.ini
 ├── library.json
 ├── library.properties
