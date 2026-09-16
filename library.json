@@ -27,7 +27,8 @@
     "PidAutotuneTypes.h",
     "OutputClamp.h",
     "ZieglerNicholsRule.h"
-  ],  "examples": [
+  ],
+  "examples": [
     {
       "name": "Basic",
       "base": "examples/Basic",
@@ -48,7 +49,8 @@
       "keywords.txt",
       "LICENSE",
       "README.md",
-      "README.ru.md"
+      "README.ru.md",
+      "docs/*"
     ],
     "exclude": [
       ".pio",

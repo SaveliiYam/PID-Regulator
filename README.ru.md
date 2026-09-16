@@ -5,7 +5,7 @@
 Лёгкая библиотека **ПИД-регулятора** для Arduino и PlatformIO.  
 Есть абстрактный интерфейс (`IPidController`), реализация (`PidController`) с anti-windup и **автотюнинг** (`IPidAutotuner` / `PidAutotuner`), который записывает найденные коэффициенты в регулятор.
 
-[English version](README.md)
+[English version](README.md) · [Архитектура и AI/RAG-контекст](docs/AI_CONTEXT.md)
 
 ---
 
@@ -17,7 +17,8 @@
 - Автотюн методом реле (Åström–Hägglund) и правила Ziegler–Nichols
 - Работа через интерфейс — удобно подменять реализацию и писать тесты
 - Ядро алгоритма не зависит от Arduino (`dt` передаётся явно)
-- Подходит для любой платформы PlatformIO / Arduino (`architectures=*`)
+- Ядро не зависит от Arduino и объявляет `architectures=*`; локальная
+  конфигурация сборки и вывод примеров сейчас ориентированы на ESP32
 
 ---
 
@@ -37,7 +38,7 @@ lib_deps =
 
 ```ini
 lib_deps =
-    https://github.com/SaveliiYam/PID-Regulator.git#v1.0.0
+    https://github.com/SaveliiYam/PID-Regulator.git#v1.2.0
     ; или: https://github.com/SaveliiYam/PID-Regulator.git#main
 ```
 
@@ -139,8 +140,8 @@ void setup() {
 }
 
 void loop() {
-  float dt = /* ... */;
-  float measurement = /* датчик */;
+  float dt = 0.01f;       // замените измеренным периодом цикла, секунды
+  float measurement = 0; // замените показанием датчика
 
   if (autotune.isRunning()) {
     float out = autotune.update(measurement, dt);
@@ -177,9 +178,10 @@ void loop() {
 | Метод | Описание |
 |--------|----------|
 | `compute(setpoint, measurement, dt)` | Расчёт управляющего воздействия; `dt` в **секундах** |
-| `setTunings(kp, ki, kd)` | Обновить коэффициенты |
+| `setTunings(kp, ki, kd)` / `setTunings(PidTunings)` | Обновить коэффициенты |
 | `setOutputLimits(min, max)` | Включить и задать ограничение выхода |
 | `reset()` | Сбросить интеграл / последнюю ошибку / последний выход |
+| `getTunings()` | Получить все коэффициенты как `PidTunings` |
 | `getKp()`, `getKi()`, `getKd()` | Текущие коэффициенты |
 | `getLastOutput()`, `getLastError()` | Последние вычисленные значения |
 
@@ -188,7 +190,10 @@ void loop() {
 Класс, реализующий `IPidController`.  
 Дополнительно: `getIntegral()` — текущая интегральная составляющая.
 
-**Конструктор:** `PidController(float kp = 1.0f, float ki = 0.0f, float kd = 0.0f)`
+**Конструкторы:**
+
+- `PidController(float kp = 1.0f, float ki = 0.0f, float kd = 0.0f)`
+- `PidController(const PidTunings& tunings)`
 
 ### `IPidAutotuner` / `PidAutotuner`
 
@@ -200,10 +205,72 @@ void loop() {
 | `update(measurement, dt)` | Шаг; возвращает выход на актуатор во время тюнинга |
 | `applyTunings()` | Записать найденные коэффициенты в привязанный ПИД |
 | `setTarget` / `setOutputStep` / `setNoiseBand` | Параметры автотюна |
+| `setOutputLimits(min, max)` | Ограничить релейный выход |
 | `setControlRule(Rule)` | Набор правил Ziegler–Nichols |
+| `setTuningRule(IPidTuningRule)` | Подключить свою стратегию преобразования Ku/Pu |
+| `setIgnoreCycles` / `setSettleCycles` | Настроить пропуск переходного процесса и усреднение |
 | `setTimeout(seconds)` | Прервать, если нет результата (0 = без лимита) |
-| `isRunning` / `isFinished` / `isFailed` | Состояние |
-| `getKp/Ki/Kd`, `getKu`, `getPu` | Результаты после успеха |
+| `cancel()` / `getState()` | Остановить тюнинг / получить полное состояние |
+| `isRunning` / `isFinished` / `isFailed` | Проверки состояния |
+| `getTunings`, `getKp/Ki/Kd`, `getKu`, `getPu` | Результаты после успеха |
+| `getLastOutput()` | Последний релейный выход |
+
+### Своя стратегия настройки
+
+Реализуйте `IPidTuningRule`, чтобы добавить формулу без изменения тюнера:
+
+```cpp
+#include <IPidTuningRule.h>
+
+class ConservativeRule : public IPidTuningRule {
+public:
+  PidTunings compute(float ku, float pu) const override {
+    (void)pu;
+    return PidTunings(0.15f * ku, 0.0f, 0.0f);
+  }
+};
+
+static ConservativeRule rule;  // должна жить дольше тюнера
+tuner.setTuningRule(rule);
+```
+
+## Особенности поведения
+
+- `dt` всегда задаётся в секундах.
+- При некорректном `dt` (`<= 0` или не конечное число) возвращается предыдущий
+  выход без обновления состояния регулятора или тюнера.
+- Задание, измерение, коэффициенты и границы не проверяются на конечность:
+  вызывающий код обязан передавать конечные значения.
+- Ограничения выключены до вызова `setOutputLimits()`; перепутанные границы
+  меняются местами автоматически. У `PidController` установка границ также
+  сразу ограничивает текущий интеграл и последний выход.
+- `setTunings()` меняет коэффициенты, но сохраняет накопленное состояние;
+  при необходимости отдельно вызовите `reset()`.
+- `setOutputStep()` и `setNoiseBand()` используют абсолютные значения.
+- Значения автотюна по умолчанию: классический PID, шаг `50`, зона шума `1`,
+  два пропущенных и шесть усредняемых полупериодов, таймаут 60 секунд.
+- `start()` разрешён из любого состояния и сбрасывает статистику и прошлые
+  результаты. `cancel()` меняет состояние только из `Running`.
+- `update()` вне `Running` возвращает последний релейный выход.
+- `setControlRule()` и `setTuningRule()` выбирают одну и ту же стратегию;
+  действует последний вызванный метод.
+- `applyTunings()` работает только после успешного тюнинга и сбрасывает ПИД.
+- `cancel()`, `Finished` и `Failed` не устанавливают безопасный выход актуатора:
+  приложение должно сразу выбрать следующий выход (ПИД, центр или ноль).
+- Объект пользовательского `IPidTuningRule` должен жить дольше тюнера.
+- Сохранение коэффициентов в EEPROM/NVS выполняет приложение.
+- Классы хранят состояние и не являются потокобезопасными.
+
+### Вспомогательные публичные типы
+
+| Тип | Назначение |
+|-----|------------|
+| `PidTunings` | Объект значений с публичными полями `kp`, `ki`, `kd` |
+| `PidAutotuneState` | `Idle`, `Running`, `Finished`, `Failed` |
+| `PidAutotuneRule` | Идентификаторы пяти встроенных правил |
+| `IPidTuningRule` | Интерфейс стратегии `Ku/Pu -> PidTunings` |
+| `ZieglerNicholsRule` | Встроенная стратегия; `forRule()` возвращает статическое правило |
+| `OutputClamp` | Общий ограничитель; обычно приложению напрямую не нужен |
 
 ---
 
@@ -215,8 +282,6 @@ void loop() {
 4. Передавайте стабильный `dt` (лучше фиксированный период регулирования).
 5. Задайте `setOutputLimits` под ваш исполнительный орган (ШИМ, скважность, напряжение и т.д.).
 
-TODO: Написать авто-тюн механизм составляющих ПИД.
-
 ---
 
 ## Структура проекта
@@ -226,10 +291,17 @@ PID-Regulator/
 ├── src/
 │   ├── IPidController.h
 │   ├── PidController.h / .cpp
+│   ├── PidTunings.h
+│   ├── OutputClamp.h
+│   ├── IPidTuningRule.h
+│   ├── ZieglerNicholsRule.h / .cpp
+│   ├── PidAutotuneTypes.h
 │   ├── PidAutotuner.h / .cpp
 │   └── IPidAutotuner.h
 ├── examples/Basic/
 ├── examples/Autotune/
+├── docs/AI_CONTEXT.md
+├── platformio.ini
 ├── library.json
 ├── library.properties
 ├── keywords.txt

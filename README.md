@@ -5,7 +5,7 @@
 Lightweight **PID controller** library for Arduino and PlatformIO.  
 Includes an abstract interface (`IPidController`), a ready-to-use implementation (`PidController`) with anti-windup, and **relay autotune** (`IPidAutotuner` / `PidAutotuner`) that writes gains into the controller.
 
-[Русская версия](README.ru.md)
+[Русская версия](README.ru.md) · [Architecture and AI/RAG context](docs/AI_CONTEXT.md)
 
 ---
 
@@ -17,7 +17,8 @@ Includes an abstract interface (`IPidController`), a ready-to-use implementation
 - Relay autotune (Åström–Hägglund) with Ziegler–Nichols-style rules
 - Interface-based design — easy to mock or swap implementations
 - No Arduino dependency in the core algorithm (`dt` is passed explicitly)
-- Works with any PlatformIO / Arduino platform (`architectures=*`)
+- Core code is Arduino-independent and declares `architectures=*`; the bundled
+  local build configuration and serial examples are currently ESP32-oriented
 
 ---
 
@@ -37,7 +38,7 @@ Pin a version / branch / commit if needed:
 
 ```ini
 lib_deps =
-    https://github.com/SaveliiYam/PID-Regulator.git#v1.0.0
+    https://github.com/SaveliiYam/PID-Regulator.git#v1.2.0
     ; or: https://github.com/SaveliiYam/PID-Regulator.git#main
 ```
 
@@ -139,8 +140,8 @@ void setup() {
 }
 
 void loop() {
-  float dt = /* ... */;
-  float measurement = /* sensor */;
+  float dt = 0.01f;       // replace with the measured loop period, seconds
+  float measurement = 0; // replace with a sensor reading
 
   if (autotune.isRunning()) {
     float out = autotune.update(measurement, dt);
@@ -177,9 +178,10 @@ Full sketch: [`examples/Autotune/Autotune.ino`](examples/Autotune/Autotune.ino).
 | Method | Description |
 |--------|-------------|
 | `compute(setpoint, measurement, dt)` | Compute control output; `dt` in **seconds** |
-| `setTunings(kp, ki, kd)` | Update PID gains |
+| `setTunings(kp, ki, kd)` / `setTunings(PidTunings)` | Update PID gains |
 | `setOutputLimits(min, max)` | Enable and set output clamp |
 | `reset()` | Clear integral / last error / last output |
+| `getTunings()` | Return all gains as `PidTunings` |
 | `getKp()`, `getKi()`, `getKd()` | Current gains |
 | `getLastOutput()`, `getLastError()` | Last computed values |
 
@@ -188,7 +190,10 @@ Full sketch: [`examples/Autotune/Autotune.ino`](examples/Autotune/Autotune.ino).
 Concrete class implementing `IPidController`.  
 Extra: `getIntegral()` — current integral term.
 
-**Constructor:** `PidController(float kp = 1.0f, float ki = 0.0f, float kd = 0.0f)`
+**Constructors:**
+
+- `PidController(float kp = 1.0f, float ki = 0.0f, float kd = 0.0f)`
+- `PidController(const PidTunings& tunings)`
 
 ### `IPidAutotuner` / `PidAutotuner`
 
@@ -200,10 +205,72 @@ Extra: `getIntegral()` — current integral term.
 | `update(measurement, dt)` | Step; returns actuator output while tuning |
 | `applyTunings()` | Write found gains into the bound PID |
 | `setTarget` / `setOutputStep` / `setNoiseBand` | Autotune parameters |
+| `setOutputLimits(min, max)` | Limit relay output |
 | `setControlRule(Rule)` | Ziegler–Nichols-style rule set |
+| `setTuningRule(IPidTuningRule)` | Inject a custom Ku/Pu conversion strategy |
+| `setIgnoreCycles` / `setSettleCycles` | Configure transient rejection and averaging |
 | `setTimeout(seconds)` | Abort if no result (0 = no limit) |
+| `cancel()` / `getState()` | Stop tuning / read full state |
 | `isRunning` / `isFinished` / `isFailed` | State helpers |
-| `getKp/Ki/Kd`, `getKu`, `getPu` | Results after success |
+| `getTunings`, `getKp/Ki/Kd`, `getKu`, `getPu` | Results after success |
+| `getLastOutput()` | Last relay output |
+
+### Custom tuning strategy
+
+Implement `IPidTuningRule` to add a formula without modifying the autotuner:
+
+```cpp
+#include <IPidTuningRule.h>
+
+class ConservativeRule : public IPidTuningRule {
+public:
+  PidTunings compute(float ku, float pu) const override {
+    (void)pu;
+    return PidTunings(0.15f * ku, 0.0f, 0.0f);
+  }
+};
+
+static ConservativeRule rule;  // must outlive the tuner
+tuner.setTuningRule(rule);
+```
+
+## Behavioral notes
+
+- `dt` is always measured in seconds.
+- Invalid `dt` (`<= 0` or non-finite) returns the previous output without
+  updating controller/autotuner state.
+- Setpoints, measurements, gains, and output limits are not validated for
+  finiteness; callers must provide finite values.
+- Output limits are disabled until `setOutputLimits()` is called; reversed
+  limits are swapped automatically. On `PidController`, setting limits also
+  clamps the current integral term and last output immediately.
+- `setTunings()` changes gains but preserves the accumulated controller state;
+  call `reset()` explicitly when that is not desired.
+- `setOutputStep()` and `setNoiseBand()` use absolute values.
+- Autotune defaults: classic PID rule, step `50`, noise band `1`, two ignored
+  half-cycles, six averaged half-cycles, and a 60-second timeout.
+- `start()` is allowed from any state and resets prior experiment statistics
+  and results. `cancel()` changes state only while `Running`.
+- `update()` outside `Running` returns the last relay output.
+- `setControlRule()` and `setTuningRule()` replace the same active strategy;
+  the most recent call wins.
+- `applyTunings()` works only after successful tuning and resets the PID state.
+- `cancel()`, `Finished`, and `Failed` do not force a safe actuator value; the
+  application must immediately choose the next output (PID, center, or zero).
+- A custom `IPidTuningRule` object must outlive the tuner that references it.
+- Gain persistence (EEPROM/NVS) is the application's responsibility.
+- The stateful classes are not thread-safe.
+
+### Supporting public types
+
+| Type | Purpose |
+|------|---------|
+| `PidTunings` | Value object with public `kp`, `ki`, and `kd` fields |
+| `PidAutotuneState` | `Idle`, `Running`, `Finished`, `Failed` |
+| `PidAutotuneRule` | Identifiers for the five built-in rules |
+| `IPidTuningRule` | Custom `Ku/Pu -> PidTunings` strategy interface |
+| `ZieglerNicholsRule` | Built-in strategy; `forRule()` returns a static rule |
+| `OutputClamp` | Shared limiting helper; normally not needed by applications |
 
 ---
 
@@ -224,10 +291,17 @@ PID-Regulator/
 ├── src/
 │   ├── IPidController.h
 │   ├── PidController.h / .cpp
+│   ├── PidTunings.h
+│   ├── OutputClamp.h
+│   ├── IPidTuningRule.h
+│   ├── ZieglerNicholsRule.h / .cpp
+│   ├── PidAutotuneTypes.h
 │   ├── PidAutotuner.h / .cpp
 │   └── IPidAutotuner.h
 ├── examples/Basic/
 ├── examples/Autotune/
+├── docs/AI_CONTEXT.md
+├── platformio.ini
 ├── library.json
 ├── library.properties
 ├── keywords.txt
